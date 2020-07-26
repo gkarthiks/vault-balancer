@@ -8,7 +8,9 @@ import (
 
 // VaultBackend holds the data about a vault pod
 type VaultBackend struct {
-	URL          *url.URL
+	IP           string
+	ProxyURL     *url.URL
+	HealthURL    *url.URL
 	Alive        bool
 	mux          sync.RWMutex
 	ReverseProxy *httputil.ReverseProxy
