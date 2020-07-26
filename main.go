@@ -2,48 +2,72 @@ package main
 
 import (
 	"context"
-	"flag"
 	"fmt"
+	discovery "github.com/gkarthiks/k8s-discovery"
 	log "github.com/sirupsen/logrus"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
+	"strconv"
 	"strings"
 	"time"
+	"vault-balancer/globals"
 	"vault-balancer/helper"
 	"vault-balancer/types"
 )
 
 func init() {
 	log.SetFormatter(&log.JSONFormatter{})
-}
+	log.Infof("Vault Balancer running version: `%v`", BuildVersion)
 
-var vaultPool types.VaultPool
+	globals.K8s, _ = discovery.NewK8s()
+	globals.Namespace, _ = globals.K8s.GetNamespace()
+	version, _ := globals.K8s.GetVersion()
+	log.Infof("Running in %v version of Kubernetes cluster in %s namespace", version, globals.Namespace)
 
-func main() {
-	var vaultList string
-	var port int
-	flag.StringVar(&vaultList, "vaults", "", "Comma separated Vault pod IPs that needs to be load balanced")
-	flag.IntVar(&port, "port", 8000, "Port to serve for load balancer")
-	flag.Parse()
-
-	if len(vaultList) == 0 {
-		log.Fatal("Provide one or more Vault Pod IPs (comma separated) to load balance")
+	label, avail := os.LookupEnv("VAULT_LABEL_SELECTOR")
+	if !avail {
+		log.Fatalf("No label selector has been provided. Please provide the label selector in `VAULT_LABEL_SELECTOR` key.")
+	} else {
+		helper.GetVaultIPsFromLabelSelectors(label)
 	}
 
-	//Getting the individual Vault Pod IPs
-	indVaultIpList := strings.Split(vaultList, ",")
-	log.Infof("%d Vault IPs (%s) obtained for the load balancing ", len(indVaultIpList), vaultList)
+	balancerPortStr, avail := os.LookupEnv("BALANCER_PORT")
+	if !avail {
+		log.Warnf("Balancer port is not specified. Please provide the balancer port in `BALANCER_PORT` key. Now the default will be used. BALANCER_PORT: %v", globals.DefaultBalancerPort)
+		balancerPort = globals.DefaultBalancerPort
+	} else {
+		balancerPort,_ = strconv.Atoi(balancerPortStr)
+	}
 
-	for _, individualIP := range indVaultIpList {
-		vaultUrl, err := url.Parse(individualIP)
+	globals.HttpTimeout, avail = os.LookupEnv("HTTP_TIMEOUT")
+	if !avail {
+		log.Warnf("No http timeout duration is specified. Please provide in `HTTP_TIMEOUT` key. Now the default time out will be used. HTTP_TIMEOUT: %v Minutes", globals.DefaultTimeOut)
+		globals.HttpTimeout = globals.DefaultTimeOut
+	}
+}
+
+var (
+	vaultPool types.VaultPool
+	BuildVersion = "dev"
+	balancerPort int
+)
+
+func main() {
+	log.Infof("%d Vault IPs (%s) obtained for load balancing ", len(globals.VaultIPList), globals.VaultIPList)
+
+	for _, individualIP := range globals.VaultIPList {
+		sanitizedIP := strings.TrimSpace(individualIP)
+		vaultUrl, err := url.Parse("http://"+sanitizedIP + globals.ProxyPath)
 		if err != nil {
-			log.Fatal(err)
+			log.Errorf("error occurred while converting string to URL for proxy path. error: %v", err)
 		}
+		healthUrl, _ := url.Parse("http://"+sanitizedIP + globals.HealthCheckPath)
 
 		proxy := httputil.NewSingleHostReverseProxy(vaultUrl)
 		proxy.ErrorHandler = func(writer http.ResponseWriter, request *http.Request, e error) {
-			log.Printf("[%s] %s\n", vaultUrl.Host, e.Error())
+			log.Infof("[%s] %s\n", vaultUrl.Host, e.Error())
 			retries := helper.GetRetryFromContext(request)
 			if retries < 3 {
 				select {
@@ -54,38 +78,38 @@ func main() {
 				return
 			}
 
-			// after 3 retries, mark this pod as down
+			// mark the ip address as not alice after 3 attempts
 			vaultPool.MarkVaultPodStatus(vaultUrl, false)
 
-			// if the same request routing for few attempts with different backends, increase the count
 			attempts := helper.GetAttemptsFromContext(request)
 			log.Infof("Retry attempt for the %s(%s): %d\n", request.RemoteAddr, request.URL.Path, attempts)
 			ctx := context.WithValue(request.Context(), helper.Attempts, attempts+1)
 			loadBalance(writer, request.WithContext(ctx))
 		}
 		vaultPool.AddBackend(&types.VaultBackend{
-			URL:          vaultUrl,
+			IP:           sanitizedIP,
+			ProxyURL:     vaultUrl,
+			HealthURL:    healthUrl,
 			Alive:        true,
 			ReverseProxy: proxy,
 		})
-		log.Infof("Configured the server: %s", vaultUrl)
+		log.Infof("The service IP %s has been configured", vaultUrl)
 	}
 
-	// create http server
+	// start the balancer http service
 	server := http.Server{
-		Addr:    fmt.Sprintf(":%d", port),
+		Addr:    fmt.Sprintf(":%d", balancerPort),
 		Handler: http.HandlerFunc(loadBalance),
 	}
 
-	// start health checking
-	go helper.HealthCheck()
+	// forking a thread for routine health check
+	go helper.HealthCheck(&vaultPool)
 
-	log.Infof("Load Balancer started at :%d", port)
+	log.Infof("Vault Balancer started and running at :%d", balancerPort)
 	if err := server.ListenAndServe(); err != nil {
 		log.Fatalf("error while starting the load balance, %v", err)
 	}
 }
-
 
 // loadBalance load balances the incoming request
 func loadBalance(w http.ResponseWriter, r *http.Request) {
