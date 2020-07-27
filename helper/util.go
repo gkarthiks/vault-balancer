@@ -21,13 +21,25 @@ const (
 func GetVaultIPsFromLabelSelectors(labelSelectors string) {
 	if len(labelSelectors) > 0 {
 		strings.Split(labelSelectors, ",")
-		pods, err := globals.K8s.Clientset.CoreV1().Pods(globals.Namespace).List(context.Background(), metaV1.ListOptions{
-			LabelSelector: strings.TrimSpace(labelSelectors),
-		})
-		if err != nil {
-			log.Fatalf("err while retrieving the pods: %v", err)
-		} else {
-			globals.VaultIPList = append(globals.VaultIPList, fetchIpAddress(pods)...)
+		go discoverIPs(labelSelectors)
+	}
+}
+
+func discoverIPs(labelSelectors string){
+	t := time.NewTicker(time.Second * 30)
+	for {
+		select {
+		case <-t.C:
+			log.Infof("Discovering pods with label selector...")
+			pods, err := globals.K8s.Clientset.CoreV1().Pods(globals.Namespace).List(context.Background(), metaV1.ListOptions{
+				LabelSelector: strings.TrimSpace(labelSelectors),
+			})
+			if err != nil {
+				log.Fatalf("err while retrieving the pods: %v", err)
+			} else {
+				globals.VaultIPList = append(globals.VaultIPList, fetchIpAddress(pods)...)
+			}
+			log.Infof("Finalized pods discovery process with label selector...")
 		}
 	}
 }
