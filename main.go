@@ -9,6 +9,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -18,7 +19,14 @@ import (
 )
 
 func init() {
-	log.SetFormatter(&log.JSONFormatter{})
+	log.SetFormatter(&log.JSONFormatter{
+		FieldMap: log.FieldMap{
+					 "FieldKeyTime":  "@timestamp",
+						"version":  "@BuildVersion",
+			   },
+		CallerPrettyfier:  nil,
+		PrettyPrint:       false,
+	})
 	log.Infof("Vault Balancer running version: `%v`", BuildVersion)
 
 	globals.K8s, _ = discovery.NewK8s()
@@ -30,7 +38,8 @@ func init() {
 	if !avail {
 		log.Fatalf("No label selector has been provided. Please provide the label selector in `VAULT_LABEL_SELECTOR` key.")
 	} else {
-		helper.GetVaultIPsFromLabelSelectors(label)
+		globals.VaultIPList = make(map[string]struct{})
+		globals.LabelSelector = label
 	}
 
 	balancerPortStr, avail := os.LookupEnv("BALANCER_PORT")
@@ -49,15 +58,62 @@ func init() {
 }
 
 var (
-	vaultPool types.VaultPool
 	BuildVersion = "dev"
 	balancerPort int
+	vaultPool types.VaultPool
 )
 
 func main() {
-	log.Infof("%d Vault IPs (%s) obtained for load balancing ", len(globals.VaultIPList), globals.VaultIPList)
+	go startRoutine()
 
-	for _, individualIP := range globals.VaultIPList {
+	// start the balancer http service
+	server := http.Server{
+		Addr:              fmt.Sprintf(":%d", balancerPort),
+		Handler:           http.HandlerFunc(loadBalance),
+	}
+	//
+	log.Infof("Vault Balancer started and running at :%d", balancerPort)
+	if err := server.ListenAndServe(); err != nil {
+		log.Fatalf("error while starting the load balance, %v", err)
+	}
+}
+
+// startRoutine starts the routine work of collecting IPs, setting up reverse
+// proxies and doing health check.
+func startRoutine() {
+	log.Info("Starting the routines for discovery, proxy setup and health check")
+	t := time.NewTicker(time.Second * 30)
+	for {
+		select {
+		case <-t.C:
+			helper.GetVaultIPsFromLabelSelectors()
+			setUpProxies(&vaultPool)
+			helper.HealthCheck(&vaultPool)
+		}
+	}
+}
+
+// loadBalance load balances the incoming request
+func loadBalance(w http.ResponseWriter, r *http.Request) {
+	attempts := helper.GetAttemptsFromContext(r)
+	if attempts > 3 {
+		log.Infof("%s(%s) Max attempts reached, terminating\n", r.RemoteAddr, r.URL.Path)
+		http.Error(w, "Service not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	peer := vaultPool.GetNextPod()
+	if peer != nil {
+		peer.ReverseProxy.ServeHTTP(w, r)
+		return
+	}
+	http.Error(w, "Service not available", http.StatusServiceUnavailable)
+}
+
+// setUpProxies will create the reverse proxies for the identified IPs
+func setUpProxies(vaultPool *types.VaultPool) {
+	log.Infof("Setting up the reverse proxy for %v", reflect.ValueOf(globals.VaultIPList).MapKeys())
+	for individualIP, _  := range globals.VaultIPList {
 		sanitizedIP := strings.TrimSpace(individualIP)
 		vaultUrl, err := url.Parse("http://"+sanitizedIP + globals.ProxyPath)
 		if err != nil {
@@ -95,35 +151,4 @@ func main() {
 		})
 		log.Infof("The service IP %s has been configured", vaultUrl)
 	}
-
-	// start the balancer http service
-	server := http.Server{
-		Addr:    fmt.Sprintf(":%d", balancerPort),
-		Handler: http.HandlerFunc(loadBalance),
-	}
-
-	// forking a thread for routine health check
-	go helper.HealthCheck(&vaultPool)
-
-	log.Infof("Vault Balancer started and running at :%d", balancerPort)
-	if err := server.ListenAndServe(); err != nil {
-		log.Fatalf("error while starting the load balance, %v", err)
-	}
-}
-
-// loadBalance load balances the incoming request
-func loadBalance(w http.ResponseWriter, r *http.Request) {
-	attempts := helper.GetAttemptsFromContext(r)
-	if attempts > 3 {
-		log.Infof("%s(%s) Max attempts reached, terminating\n", r.RemoteAddr, r.URL.Path)
-		http.Error(w, "Service not available", http.StatusServiceUnavailable)
-		return
-	}
-
-	peer := vaultPool.GetNextPod()
-	if peer != nil {
-		peer.ReverseProxy.ServeHTTP(w, r)
-		return
-	}
-	http.Error(w, "Service not available", http.StatusServiceUnavailable)
 }

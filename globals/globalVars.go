@@ -3,10 +3,11 @@ package globals
 import discovery "github.com/gkarthiks/k8s-discovery"
 
 var (
-	VaultIPList []string
+	VaultIPList map[string]struct{}
 	K8s         *discovery.K8s
 	Namespace   string
 	HttpTimeout string
+	LabelSelector string
 )
 
 const (

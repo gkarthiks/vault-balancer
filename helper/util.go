@@ -6,8 +6,8 @@ import (
 	v1 "k8s.io/api/core/v1"
 	metaV1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"net/http"
+	"reflect"
 	"strings"
-	"time"
 	"vault-balancer/globals"
 	"vault-balancer/types"
 )
@@ -18,29 +18,20 @@ const (
 )
 
 // GetVaultIPsFromLabelSelectors will extract the IP Addresses for the pods that matches the labelSelectors
-func GetVaultIPsFromLabelSelectors(labelSelectors string) {
-	if len(labelSelectors) > 0 {
-		strings.Split(labelSelectors, ",")
-		go discoverIPs(labelSelectors)
-	}
-}
-
-func discoverIPs(labelSelectors string){
-	t := time.NewTicker(time.Second * 30)
-	for {
-		select {
-		case <-t.C:
-			log.Infof("Discovering pods with label selector...")
-			pods, err := globals.K8s.Clientset.CoreV1().Pods(globals.Namespace).List(context.Background(), metaV1.ListOptions{
-				LabelSelector: strings.TrimSpace(labelSelectors),
-			})
-			if err != nil {
-				log.Fatalf("err while retrieving the pods: %v", err)
-			} else {
-				globals.VaultIPList = append(globals.VaultIPList, fetchIpAddress(pods)...)
-			}
-			log.Infof("Finalized pods discovery process with label selector...")
+func GetVaultIPsFromLabelSelectors() {
+	if len(globals.LabelSelector) > 0 {
+		log.Infof("Discovering the Vault pods based on the label selector '%v'.", globals.LabelSelector)
+		strings.Split(globals.LabelSelector, ",")
+		log.Infof("Discovering pods with label selector...")
+		pods, err := globals.K8s.Clientset.CoreV1().Pods(globals.Namespace).List(context.Background(), metaV1.ListOptions{
+			LabelSelector: strings.TrimSpace(globals.LabelSelector),
+		})
+		if err != nil {
+			log.Fatalf("err while retrieving the pods: %v", err)
+		} else {
+			fetchIpAddress(pods)
 		}
+		log.Infof("Finalized pods discovery process with label selector. Obtained the IP Address %v", reflect.ValueOf(globals.VaultIPList).MapKeys())
 	}
 }
 
@@ -52,7 +43,7 @@ func GetAttemptsFromContext(r *http.Request) int {
 	return 1
 }
 
-// GetAttemptsFromContext returns the attempts for request
+// GetRetryFromContext returns the attempts for request
 func GetRetryFromContext(r *http.Request) int {
 	if retry, ok := r.Context().Value(Retry).(int); ok {
 		return retry
@@ -62,24 +53,20 @@ func GetRetryFromContext(r *http.Request) int {
 
 // HealthCheck runs a routine for check status of the pods every 2 mins
 func HealthCheck(vaultPool *types.VaultPool) {
-	t := time.NewTicker(time.Second * 30)
-	for {
-		select {
-		case <-t.C:
-			log.Info("Starting health check...")
-			vaultPool.HealthCheck()
-			log.Info("Health check completed")
-		}
-	}
+	log.Info("Starting health check...")
+	vaultPool.HealthCheck()
+	log.Info("Health check completed")
 }
 
 // extracts the pods IP from the selected pods
-func fetchIpAddress(podsList *v1.PodList) []string {
-	var podIps []string
+func fetchIpAddress(podsList *v1.PodList) {
 	for _, pod := range podsList.Items {
 		if pod.Status.Phase == v1.PodRunning {
-			podIps = append(podIps, pod.Status.PodIP)
+			if _, ok := globals.VaultIPList[pod.Status.PodIP]; ok {
+				log.Infof("%v already added", pod.Status.PodIP)
+			} else {
+				globals.VaultIPList[pod.Status.PodIP] = struct{}{}
+			}
 		}
 	}
-	return podIps
 }
