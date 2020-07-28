@@ -67,12 +67,12 @@ func populateIpAddresses(podsList *v1.PodList, vaultPool *types.VaultPool) {
 		currentPodNames[pod.Name] = struct{}{}
 		if pod.Status.Phase == v1.PodRunning {
 			// adding the currently discovered pod ips
-			globals.VaultIPList[pod.Name] = pod.Status.PodIP
-			//if _, ok := globals.VaultIPList[pod.Status.PodIP]; ok {
-			//	log.Infof("%v already added", pod.Status.PodIP)
-			//} else {
-			//	globals.VaultIPList[pod.Status.PodIP] = struct{}{}
-			//}
+			//globals.VaultIPList[pod.Name] = pod.Status.PodIP
+			if _, ok := globals.VaultIPList[pod.Name]; ok {
+				log.Infof("%v already added and configured", pod.Name)
+			} else {
+				globals.VaultIPList[pod.Name] = pod.Status.PodIP
+			}
 		}
 	}
 	for historyPodName, ipAddress := range globals.VaultIPList {
