@@ -19,14 +19,7 @@ import (
 )
 
 func init() {
-	log.SetFormatter(&log.JSONFormatter{
-		FieldMap: log.FieldMap{
-			"FieldKeyTime": "@timestamp",
-			"version":      "@BuildVersion",
-		},
-		CallerPrettyfier: nil,
-		PrettyPrint:      false,
-	})
+	log.SetFormatter(&log.JSONFormatter{})
 	log.Infof("Vault Balancer running version: `%v`", BuildVersion)
 
 	globals.K8s, _ = discovery.NewK8s()
@@ -58,13 +51,19 @@ func init() {
 }
 
 var (
+	VersionLogger = log.WithFields(log.Fields{"vlb_version": BuildVersion})
 	BuildVersion = "dev"
 	balancerPort int
 	vaultPool    types.VaultPool
 )
 
+const (
+	HealthCheckPath     = ":8200/v1/sys/seal-status"
+	ProxyPath           = ":8200"
+)
+
 func main() {
-	go startRoutine()
+	go startRoutine(context.Background())
 
 	// start the balancer http service
 	server := http.Server{
@@ -72,16 +71,16 @@ func main() {
 		Handler: http.HandlerFunc(loadBalance),
 	}
 	//
-	log.Infof("Vault Balancer started and running at :%d", balancerPort)
+	VersionLogger.Infof("Vault Balancer started and running at :%d", balancerPort)
 	if err := server.ListenAndServe(); err != nil {
-		log.Fatalf("error while starting the load balance, %v", err)
+		VersionLogger.Fatalf("error while starting the load balance, %v", err)
 	}
 }
 
 // startRoutine starts the routine work of collecting IPs, setting up reverse
 // proxies and doing health check.
-func startRoutine() {
-	log.Info("Starting the routines for discovery, proxy setup and health check")
+func startRoutine(context context.Context) {
+	VersionLogger.Info("Starting the routines for discovery, proxy setup and health check")
 	t := time.NewTicker(time.Second * 30)
 	for {
 		select {
@@ -115,11 +114,11 @@ func setUpProxies(vaultPool *types.VaultPool) {
 	log.Infof("Setting up the reverse proxy for %v", reflect.ValueOf(globals.VaultIPList).MapKeys())
 	for _, individualIP := range globals.VaultIPList {
 		sanitizedIP := strings.TrimSpace(individualIP)
-		vaultUrl, err := url.Parse("http://" + sanitizedIP + globals.ProxyPath)
+		vaultUrl, err := url.Parse("http://" + sanitizedIP + ProxyPath)
 		if err != nil {
 			log.Errorf("error occurred while converting string to URL for proxy path. error: %v", err)
 		}
-		healthUrl, _ := url.Parse("http://" + sanitizedIP + globals.HealthCheckPath)
+		healthUrl, _ := url.Parse("http://" + sanitizedIP + HealthCheckPath)
 
 		proxy := httputil.NewSingleHostReverseProxy(vaultUrl)
 		proxy.ErrorHandler = func(writer http.ResponseWriter, request *http.Request, e error) {
@@ -127,7 +126,7 @@ func setUpProxies(vaultPool *types.VaultPool) {
 			retries := helper.GetRetryFromContext(request)
 			if retries < 3 {
 				select {
-				case <-time.After(10 * time.Millisecond):
+				case <-time.After(5 * time.Millisecond):
 					ctx := context.WithValue(request.Context(), helper.Retry, retries+1)
 					proxy.ServeHTTP(writer, request.WithContext(ctx))
 				}
