@@ -13,33 +13,33 @@ import (
 
 // VaultPool holds information about reachable vault pods
 type VaultPool struct {
-	vaultBackends []*VaultBackend
+	VaultBackends []*VaultBackend
 	current       uint64
 }
 
 // AddBackend to the existing vault pool
 func (vp *VaultPool) AddBackend(vaultBackend *VaultBackend) {
-	vp.vaultBackends = append(vp.vaultBackends, vaultBackend)
+	vp.VaultBackends = append(vp.VaultBackends, vaultBackend)
 }
 
 // AddBackend to the existing vault pool
 func (vp *VaultPool) RetireBackend(obsoleteIP string) {
-	for index, currBackend := range vp.vaultBackends {
+	for index, currBackend := range vp.VaultBackends {
 		if currBackend.IP == obsoleteIP {
 			log.Infof("Retiring the backend %v from list of active IPs", obsoleteIP)
-			vp.vaultBackends = append(vp.vaultBackends[:index], vp.vaultBackends[index+1:]...)
+			vp.VaultBackends = append(vp.VaultBackends[:index], vp.VaultBackends[index+1:]...)
 		}
 	}
 }
 
 // NextIndex atomically increase the counter and return an index
 func (vp *VaultPool) NextIndex() int {
-	return int(atomic.AddUint64(&vp.current, uint64(1)) % uint64(len(vp.vaultBackends)))
+	return int(atomic.AddUint64(&vp.current, uint64(1)) % uint64(len(vp.VaultBackends)))
 }
 
 // MarkVaultPodStatus changes a status of a vault pod
 func (vp *VaultPool) MarkVaultPodStatus(podUrl *url.URL, alive bool) {
-	for _, b := range vp.vaultBackends {
+	for _, b := range vp.VaultBackends {
 		if b.ProxyURL.String() == podUrl.String() {
 			b.SetAlive(alive)
 			break
@@ -50,14 +50,14 @@ func (vp *VaultPool) MarkVaultPodStatus(podUrl *url.URL, alive bool) {
 // GetNextPod returns next active peer to take a connection
 func (vp *VaultPool) GetNextPod() *VaultBackend {
 	next := vp.NextIndex()
-	l := len(vp.vaultBackends) + next
+	l := len(vp.VaultBackends) + next
 	for i := next; i < l; i++ {
-		idx := i % len(vp.vaultBackends)
-		if vp.vaultBackends[idx].IsAlive() {
+		idx := i % len(vp.VaultBackends)
+		if vp.VaultBackends[idx].IsAlive() {
 			if i != next {
 				atomic.StoreUint64(&vp.current, uint64(idx))
 			}
-			return vp.vaultBackends[idx]
+			return vp.VaultBackends[idx]
 		}
 	}
 	return nil
@@ -65,7 +65,7 @@ func (vp *VaultPool) GetNextPod() *VaultBackend {
 
 // HealthCheck pings the backends and update the status
 func (vp *VaultPool) HealthCheck() {
-	for _, vaults := range vp.vaultBackends {
+	for _, vaults := range vp.VaultBackends {
 		status := "up"
 		alive := isBackendAlive(vaults.HealthURL)
 		vaults.SetAlive(alive)
