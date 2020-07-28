@@ -26,6 +26,7 @@ func (vp *VaultPool) AddBackend(vaultBackend *VaultBackend) {
 func (vp *VaultPool) RetireBackend(obsoleteIP string) {
 	for index, currBackend := range vp.vaultBackends {
 		if currBackend.IP == obsoleteIP {
+			log.Infof("Retiring the backend %v from list of active IPs", obsoleteIP)
 			vp.vaultBackends = append(vp.vaultBackends[:index], vp.vaultBackends[index+1:]...)
 		}
 	}

@@ -33,6 +33,8 @@ func GetVaultIPsFromLabelSelectors(vaultPool *types.VaultPool) {
 		}
 		log.Infof("Finalized pods discovery process with label selector. Obtained the IP Address %v", reflect.ValueOf(globals.VaultIPList).MapKeys())
 	}
+
+	log.Printf("Vault Pool data at the end of GetVault IPs %v", vaultPool)
 }
 
 // GetAttemptsFromContext returns the attempts for a request
