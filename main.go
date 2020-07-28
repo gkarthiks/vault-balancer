@@ -9,7 +9,6 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
-	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -27,12 +26,9 @@ func init() {
 	version, _ := globals.K8s.GetVersion()
 	log.Infof("Running in %v version of Kubernetes cluster in %s namespace", version, globals.Namespace)
 
-	label, avail := os.LookupEnv("VAULT_LABEL_SELECTOR")
+	labelSelector, avail = os.LookupEnv("VAULT_LABEL_SELECTOR")
 	if !avail {
 		log.Fatalf("No label selector has been provided. Please provide the label selector in `VAULT_LABEL_SELECTOR` key.")
-	} else {
-		globals.VaultIPList = make(map[string]string)
-		globals.LabelSelector = label
 	}
 
 	balancerPortStr, avail := os.LookupEnv("BALANCER_PORT")
@@ -51,10 +47,12 @@ func init() {
 }
 
 var (
-	VersionLogger = log.WithFields(log.Fields{"vlb_version": BuildVersion})
+	versionLogger = log.WithFields(log.Fields{"vlb_version": BuildVersion})
 	BuildVersion = "dev"
 	balancerPort int
 	vaultPool    types.VaultPool
+	labelSelector string
+	avail bool
 )
 
 const (
@@ -71,23 +69,23 @@ func main() {
 		Handler: http.HandlerFunc(loadBalance),
 	}
 	//
-	VersionLogger.Infof("Vault Balancer started and running at :%d", balancerPort)
+	versionLogger.Infof("Vault Balancer started and running at :%d", balancerPort)
 	if err := server.ListenAndServe(); err != nil {
-		VersionLogger.Fatalf("error while starting the load balance, %v", err)
+		versionLogger.Fatalf("error while starting the load balance, %v", err)
 	}
 }
 
 // startRoutine starts the routine work of collecting IPs, setting up reverse
 // proxies and doing health check.
 func startRoutine(context context.Context) {
-	VersionLogger.Info("Starting the routines for discovery, proxy setup and health check")
-	t := time.NewTicker(time.Second * 30)
+	versionLogger.Info("Starting the routines for discovery, proxy setup and health check")
+	t := time.NewTicker(time.Second * 10)
 	for {
 		select {
 		case <-t.C:
-			helper.GetVaultIPsFromLabelSelectors(&vaultPool)
-			setUpProxies(&vaultPool)
-			helper.HealthCheck(&vaultPool)
+			ipAddressMap := helper.GetVaultIPsFromLabelSelectors(labelSelector, versionLogger)
+			setUpProxies(ipAddressMap)
+			healthCheck(vaultPool)
 		}
 	}
 }
@@ -96,7 +94,7 @@ func startRoutine(context context.Context) {
 func loadBalance(w http.ResponseWriter, r *http.Request) {
 	attempts := helper.GetAttemptsFromContext(r)
 	if attempts > 3 {
-		log.Infof("%s(%s) Max attempts reached, terminating\n", r.RemoteAddr, r.URL.Path)
+		versionLogger.Infof("%s(%s) Max attempts reached, terminating\n", r.RemoteAddr, r.URL.Path)
 		http.Error(w, "Service not available", http.StatusServiceUnavailable)
 		return
 	}
@@ -110,44 +108,67 @@ func loadBalance(w http.ResponseWriter, r *http.Request) {
 }
 
 // setUpProxies will create the reverse proxies for the identified IPs
-func setUpProxies(vaultPool *types.VaultPool) {
-	log.Infof("Setting up the reverse proxy for %v", reflect.ValueOf(globals.VaultIPList).MapKeys())
-	for _, individualIP := range globals.VaultIPList {
-		sanitizedIP := strings.TrimSpace(individualIP)
-		vaultUrl, err := url.Parse("http://" + sanitizedIP + ProxyPath)
-		if err != nil {
-			log.Errorf("error occurred while converting string to URL for proxy path. error: %v", err)
-		}
-		healthUrl, _ := url.Parse("http://" + sanitizedIP + HealthCheckPath)
-
-		proxy := httputil.NewSingleHostReverseProxy(vaultUrl)
-		proxy.ErrorHandler = func(writer http.ResponseWriter, request *http.Request, e error) {
-			log.Infof("[%s] %s\n", vaultUrl.Host, e.Error())
-			retries := helper.GetRetryFromContext(request)
-			if retries < 3 {
-				select {
-				case <-time.After(5 * time.Millisecond):
-					ctx := context.WithValue(request.Context(), helper.Retry, retries+1)
-					proxy.ServeHTTP(writer, request.WithContext(ctx))
-				}
-				return
+func setUpProxies(serviceNameAndIP map[string]struct{}) {
+	for podIP, _ := range serviceNameAndIP {
+		if !vaultPool.IsInThePool(podIP) {
+			sanitizedIP := strings.TrimSpace(podIP)
+			vaultUrl, err := url.Parse("http://" + sanitizedIP + ProxyPath)
+			if err != nil {
+				versionLogger.Errorf("error occurred while converting string to URL for proxy path. error: %v", err)
 			}
+			healthUrl, _ := url.Parse("http://" + sanitizedIP + HealthCheckPath)
 
-			// mark the ip address as not alice after 3 attempts
-			vaultPool.MarkVaultPodStatus(vaultUrl, false)
+			proxy := httputil.NewSingleHostReverseProxy(vaultUrl)
+			proxy.ErrorHandler = func(writer http.ResponseWriter, request *http.Request, e error) {
+				versionLogger.Infof("[%s] %s\n", vaultUrl.Host, e.Error())
+				retries := helper.GetRetryFromContext(request)
+				if retries < 3 {
+					select {
+					case <-time.After(5 * time.Millisecond):
+						ctx := context.WithValue(request.Context(), helper.Retry, retries+1)
+						proxy.ServeHTTP(writer, request.WithContext(ctx))
+					}
+					return
+				}
 
-			attempts := helper.GetAttemptsFromContext(request)
-			log.Infof("Retry attempt for the %s(%s): %d\n", request.RemoteAddr, request.URL.Path, attempts)
-			ctx := context.WithValue(request.Context(), helper.Attempts, attempts+1)
-			loadBalance(writer, request.WithContext(ctx))
+				// mark the ip address as not alice after 3 attempts
+				vaultPool.MarkVaultPodStatus(vaultUrl, false)
+
+				attempts := helper.GetAttemptsFromContext(request)
+				versionLogger.Infof("Retry attempt for the %s(%s): %d\n", request.RemoteAddr, request.URL.Path, attempts)
+				ctx := context.WithValue(request.Context(), helper.Attempts, attempts+1)
+				loadBalance(writer, request.WithContext(ctx))
+			}
+			vaultPool.AddBackend(&types.VaultBackend{
+				IP:           sanitizedIP,
+				ProxyURL:     vaultUrl,
+				HealthURL:    healthUrl,
+				Alive:        true,
+				ReverseProxy: proxy,
+			})
+			versionLogger.Infof("The service IP %s has been configured", vaultUrl)
+		} else {
+			versionLogger.Infof("Pod IP %v is already configured.", podIP)
 		}
-		vaultPool.AddBackend(&types.VaultBackend{
-			IP:           sanitizedIP,
-			ProxyURL:     vaultUrl,
-			HealthURL:    healthUrl,
-			Alive:        true,
-			ReverseProxy: proxy,
-		})
-		log.Infof("The service IP %s has been configured", vaultUrl)
 	}
+
+	var toBeRemoved []*types.VaultBackend
+	for _, b := range vaultPool.VaultBackends {
+		if _, ok := serviceNameAndIP[b.IP]; !ok {
+			toBeRemoved  = append(toBeRemoved, b)
+		}
+	}
+	for _, b := range toBeRemoved {
+		versionLogger.Infof("Retiring the backed with IP %v from load balancing", b.IP)
+		vaultPool.RetireBackend(b)
+	}
+}
+
+
+// healthCheck runs a routine for check status of the pods every 2 mins
+func healthCheck(vaultPool types.VaultPool) {
+
+	versionLogger.Info("Starting health check...")
+	vaultPool.HealthCheck()
+	versionLogger.Info("Health check completed")
 }

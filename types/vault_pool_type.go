@@ -22,14 +22,27 @@ func (vp *VaultPool) AddBackend(vaultBackend *VaultBackend) {
 	vp.VaultBackends = append(vp.VaultBackends, vaultBackend)
 }
 
-// AddBackend to the existing vault pool
-func (vp *VaultPool) RetireBackend(obsoleteIP string) {
-	for index, currBackend := range vp.VaultBackends {
-		if currBackend.IP == obsoleteIP {
-			log.Infof("Retiring the backend %v from list of active IPs", obsoleteIP)
-			vp.VaultBackends = append(vp.VaultBackends[:index], vp.VaultBackends[index+1:]...)
+// RetireBackend removes the provided backend from load balancing
+func (vp *VaultPool) RetireBackend(b *VaultBackend) {
+	for i := range vp.VaultBackends {
+		if vp.VaultBackends[i].IP == b.IP {
+			copy(vp.VaultBackends[i:], vp.VaultBackends[i+1:])
+			vp.VaultBackends[len(vp.VaultBackends)-1] = nil
+			vp.VaultBackends = vp.VaultBackends[:len(vp.VaultBackends)-1]
 		}
 	}
+}
+
+// AddBackend to the existing vault pool
+func (vp *VaultPool) IsInThePool(podIP string) bool {
+	if vp.VaultBackends != nil {
+		for _, b := range vp.VaultBackends {
+			if b.IP == podIP {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // NextIndex atomically increase the counter and return an index
@@ -67,7 +80,7 @@ func (vp *VaultPool) GetNextPod() *VaultBackend {
 func (vp *VaultPool) HealthCheck() {
 	for _, vaults := range vp.VaultBackends {
 		status := "up"
-		alive := isBackendAlive(vaults.HealthURL)
+		alive := true//isBackendAlive(vaults.HealthURL)
 		vaults.SetAlive(alive)
 		if !alive {
 			status = "down"
