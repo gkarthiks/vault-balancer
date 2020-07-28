@@ -81,7 +81,7 @@ func (vp *VaultPool) GetNextPod() *VaultBackend {
 func (vp *VaultPool) HealthCheck() {
 	for _, vaults := range vp.VaultBackends {
 		status := "up"
-		alive := true//isBackendAlive(vaults.HealthURL)
+		alive := isBackendAlive(vaults.HealthURL)
 		vaults.SetAlive(alive)
 		if !alive {
 			status = "down"
