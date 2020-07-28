@@ -84,6 +84,7 @@ func populateIpAddresses(podsList *v1.PodList, vaultPool *types.VaultPool) {
 
 	for historyPodName, ipAddress := range globals.VaultIPList {
 		log.Printf("TODO: inside the reconciliation loop with historyPodName: %v, ipAddress: %v \n",historyPodName, ipAddress)
+		log.Printf("TODO: currentPodNames value:= %v",currentPodNames)
 		if _, ok := currentPodNames[historyPodName]; !ok {
 			log.Printf("TODO: inside the if _, ok := currentPodNames[historyPodName]; with ok value= %v and currentPodNames[historyPodName]= %v \n",ok, currentPodNames[historyPodName] )
 			// removing the obsolete pod and its details
