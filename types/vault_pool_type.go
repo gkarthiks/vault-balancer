@@ -22,6 +22,15 @@ func (vp *VaultPool) AddBackend(vaultBackend *VaultBackend) {
 	vp.vaultBackends = append(vp.vaultBackends, vaultBackend)
 }
 
+// AddBackend to the existing vault pool
+func (vp *VaultPool) RetireBackend(obsoleteIP string) {
+	for index, currBackend := range vp.vaultBackends {
+		if currBackend.IP == obsoleteIP {
+			vp.vaultBackends = append(vp.vaultBackends[:index], vp.vaultBackends[index+1:]...)
+		}
+	}
+}
+
 // NextIndex atomically increase the counter and return an index
 func (vp *VaultPool) NextIndex() int {
 	return int(atomic.AddUint64(&vp.current, uint64(1)) % uint64(len(vp.vaultBackends)))

@@ -21,11 +21,11 @@ import (
 func init() {
 	log.SetFormatter(&log.JSONFormatter{
 		FieldMap: log.FieldMap{
-					 "FieldKeyTime":  "@timestamp",
-						"version":  "@BuildVersion",
-			   },
-		CallerPrettyfier:  nil,
-		PrettyPrint:       false,
+			"FieldKeyTime": "@timestamp",
+			"version":      "@BuildVersion",
+		},
+		CallerPrettyfier: nil,
+		PrettyPrint:      false,
 	})
 	log.Infof("Vault Balancer running version: `%v`", BuildVersion)
 
@@ -38,7 +38,7 @@ func init() {
 	if !avail {
 		log.Fatalf("No label selector has been provided. Please provide the label selector in `VAULT_LABEL_SELECTOR` key.")
 	} else {
-		globals.VaultIPList = make(map[string]struct{})
+		globals.VaultIPList = make(map[string]string)
 		globals.LabelSelector = label
 	}
 
@@ -47,7 +47,7 @@ func init() {
 		log.Warnf("Balancer port is not specified. Please provide the balancer port in `BALANCER_PORT` key. Now the default will be used. BALANCER_PORT: %v", globals.DefaultBalancerPort)
 		balancerPort = globals.DefaultBalancerPort
 	} else {
-		balancerPort,_ = strconv.Atoi(balancerPortStr)
+		balancerPort, _ = strconv.Atoi(balancerPortStr)
 	}
 
 	globals.HttpTimeout, avail = os.LookupEnv("HTTP_TIMEOUT")
@@ -60,7 +60,7 @@ func init() {
 var (
 	BuildVersion = "dev"
 	balancerPort int
-	vaultPool types.VaultPool
+	vaultPool    types.VaultPool
 )
 
 func main() {
@@ -68,8 +68,8 @@ func main() {
 
 	// start the balancer http service
 	server := http.Server{
-		Addr:              fmt.Sprintf(":%d", balancerPort),
-		Handler:           http.HandlerFunc(loadBalance),
+		Addr:    fmt.Sprintf(":%d", balancerPort),
+		Handler: http.HandlerFunc(loadBalance),
 	}
 	//
 	log.Infof("Vault Balancer started and running at :%d", balancerPort)
@@ -86,7 +86,7 @@ func startRoutine() {
 	for {
 		select {
 		case <-t.C:
-			helper.GetVaultIPsFromLabelSelectors()
+			helper.GetVaultIPsFromLabelSelectors(&vaultPool)
 			setUpProxies(&vaultPool)
 			helper.HealthCheck(&vaultPool)
 		}
@@ -113,13 +113,13 @@ func loadBalance(w http.ResponseWriter, r *http.Request) {
 // setUpProxies will create the reverse proxies for the identified IPs
 func setUpProxies(vaultPool *types.VaultPool) {
 	log.Infof("Setting up the reverse proxy for %v", reflect.ValueOf(globals.VaultIPList).MapKeys())
-	for individualIP, _  := range globals.VaultIPList {
+	for _, individualIP := range globals.VaultIPList {
 		sanitizedIP := strings.TrimSpace(individualIP)
-		vaultUrl, err := url.Parse("http://"+sanitizedIP + globals.ProxyPath)
+		vaultUrl, err := url.Parse("http://" + sanitizedIP + globals.ProxyPath)
 		if err != nil {
 			log.Errorf("error occurred while converting string to URL for proxy path. error: %v", err)
 		}
-		healthUrl, _ := url.Parse("http://"+sanitizedIP + globals.HealthCheckPath)
+		healthUrl, _ := url.Parse("http://" + sanitizedIP + globals.HealthCheckPath)
 
 		proxy := httputil.NewSingleHostReverseProxy(vaultUrl)
 		proxy.ErrorHandler = func(writer http.ResponseWriter, request *http.Request, e error) {

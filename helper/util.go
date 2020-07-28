@@ -18,7 +18,7 @@ const (
 )
 
 // GetVaultIPsFromLabelSelectors will extract the IP Addresses for the pods that matches the labelSelectors
-func GetVaultIPsFromLabelSelectors() {
+func GetVaultIPsFromLabelSelectors(vaultPool *types.VaultPool) {
 	if len(globals.LabelSelector) > 0 {
 		log.Infof("Discovering the Vault pods based on the label selector '%v'.", globals.LabelSelector)
 		strings.Split(globals.LabelSelector, ",")
@@ -29,7 +29,7 @@ func GetVaultIPsFromLabelSelectors() {
 		if err != nil {
 			log.Fatalf("err while retrieving the pods: %v", err)
 		} else {
-			fetchIpAddress(pods)
+			populateIpAddresses(pods, vaultPool)
 		}
 		log.Infof("Finalized pods discovery process with label selector. Obtained the IP Address %v", reflect.ValueOf(globals.VaultIPList).MapKeys())
 	}
@@ -59,14 +59,25 @@ func HealthCheck(vaultPool *types.VaultPool) {
 }
 
 // extracts the pods IP from the selected pods
-func fetchIpAddress(podsList *v1.PodList) {
+func populateIpAddresses(podsList *v1.PodList, vaultPool *types.VaultPool) {
+	currentPodNames := make(map[string]struct{})
 	for _, pod := range podsList.Items {
+		currentPodNames[pod.Name] = struct{}{}
 		if pod.Status.Phase == v1.PodRunning {
-			if _, ok := globals.VaultIPList[pod.Status.PodIP]; ok {
-				log.Infof("%v already added", pod.Status.PodIP)
-			} else {
-				globals.VaultIPList[pod.Status.PodIP] = struct{}{}
-			}
+			// adding the currently discovered pod ips
+			globals.VaultIPList[pod.Name] = pod.Status.PodIP
+			//if _, ok := globals.VaultIPList[pod.Status.PodIP]; ok {
+			//	log.Infof("%v already added", pod.Status.PodIP)
+			//} else {
+			//	globals.VaultIPList[pod.Status.PodIP] = struct{}{}
+			//}
+		}
+	}
+	for historyPodName, ipAddress := range globals.VaultIPList {
+		if _, ok := currentPodNames[historyPodName]; !ok {
+			// removing the obsolete pod and its details
+			delete(globals.VaultIPList, historyPodName)
+			vaultPool.RetireBackend(ipAddress)
 		}
 	}
 }
