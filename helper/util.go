@@ -66,24 +66,32 @@ func populateIpAddresses(podsList *v1.PodList, vaultPool *types.VaultPool) {
 	for _, pod := range podsList.Items {
 		currentPodNames[pod.Name] = struct{}{}
 		if pod.Status.Phase == v1.PodRunning {
+			log.Printf("TODO: Pod %v is running\n", pod.Name)
+			log.Printf("TODO: adding the current pod(%v) and ip(%v)\n", pod.Name, pod.Status.PodIP)
 			// adding the currently discovered pod ips
-			//globals.VaultIPList[pod.Name] = pod.Status.PodIP
 			if _, ok := globals.VaultIPList[pod.Name]; ok {
+				log.Printf("TODO: inside  if _, ok := globals.VaultIPList[pod.Name]; ok { with the value ` %v ` \n", globals.VaultIPList[pod.Name])
 				log.Infof("%v already added and configured", pod.Name)
 			} else {
+				log.Printf("TODO: inside  if _, ok := globals.VaultIPList[pod.Name]; ok { with the value ` %v ` \n", globals.VaultIPList[pod.Name])
 				log.Infof("%v adding and configuring", pod.Name)
 				globals.VaultIPList[pod.Name] = pod.Status.PodIP
+				log.Printf("TODO: now the value of the vaultiplist is %v \n", reflect.ValueOf(globals.VaultIPList).MapKeys())
 			}
 		}
 	}
-
-	log.Printf("Vault IP List data at the end of populate %v", reflect.ValueOf(globals.VaultIPList).MapKeys() )
+	log.Printf("TODO: now Vault IP List data at the end of populate %v \n", reflect.ValueOf(globals.VaultIPList).MapKeys())
 
 	for historyPodName, ipAddress := range globals.VaultIPList {
+		log.Printf("TODO: inside the reconciliation loop with historyPodName: %v, ipAddress: %v \n",historyPodName, ipAddress)
 		if _, ok := currentPodNames[historyPodName]; !ok {
+			log.Printf("TODO: inside the if _, ok := currentPodNames[historyPodName]; with ok value= %v and currentPodNames[historyPodName]= %v \n",ok, currentPodNames[historyPodName] )
 			// removing the obsolete pod and its details
+			log.Printf("TODO: removing the obsolete pod and its details")
 			delete(globals.VaultIPList, historyPodName)
+			log.Printf("TODO: RetireBackend %v", ipAddress)
 			vaultPool.RetireBackend(ipAddress)
+			log.Printf("TODO: after RetireBackend vaultpool", reflect.ValueOf(vaultPool).MapKeys())
 		}
 	}
 }
