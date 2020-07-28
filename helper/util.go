@@ -71,10 +71,14 @@ func populateIpAddresses(podsList *v1.PodList, vaultPool *types.VaultPool) {
 			if _, ok := globals.VaultIPList[pod.Name]; ok {
 				log.Infof("%v already added and configured", pod.Name)
 			} else {
+				log.Infof("%v adding and configuring", pod.Name)
 				globals.VaultIPList[pod.Name] = pod.Status.PodIP
 			}
 		}
 	}
+
+	log.Printf("Vault IP List data at the end of populate %v", reflect.ValueOf(globals.VaultIPList).MapKeys() )
+
 	for historyPodName, ipAddress := range globals.VaultIPList {
 		if _, ok := currentPodNames[historyPodName]; !ok {
 			// removing the obsolete pod and its details
