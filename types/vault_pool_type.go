@@ -29,6 +29,7 @@ func (vp *VaultPool) RetireBackend(b *VaultBackend) {
 			copy(vp.VaultBackends[i:], vp.VaultBackends[i+1:])
 			vp.VaultBackends[len(vp.VaultBackends)-1] = nil
 			vp.VaultBackends = vp.VaultBackends[:len(vp.VaultBackends)-1]
+			break
 		}
 	}
 }
