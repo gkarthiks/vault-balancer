@@ -4,6 +4,9 @@
 
 *Vault Load Balancer(VLB)* is a simple load balancer written in GoLang to help get HA of the Open Source Vault.
 
+## TLDR;
+To know more on how to use *Vault Initializer* and *Vault Load Balancer* head over to this [How to make Vault Highly Available on NFS](https://medium.com/@github.gkarthiks/how-to-make-opensource-vault-highly-available-on-nfs-5af0c68070d8) article on Medium.
+
 ## How does it work
 The VLB is based on round robin mechanism. Collects all the Vault Pod IP addresses by matching the label selector. Adds it to the list of available services.
 
