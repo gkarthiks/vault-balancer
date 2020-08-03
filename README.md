@@ -1,6 +1,13 @@
 # Vault Load Balancer
+![Build](https://github.com/gkarthiks/vault-balancer/workflows/docker-build-push/badge.svg)
+![Release](https://img.shields.io/github/tag-date/gkarthiks/vault-balancer.svg?color=Orange&label=Latest%20Release)
+![Pulls](https://img.shields.io/docker/pulls/gkarthics/vault-balancer.svg)
+![language](https://img.shields.io/badge/Language-go-blue.svg)
+[![Go Report Card](https://goreportcard.com/badge/github.com/gkarthiks/vault-balancer)](https://goreportcard.com/report/github.com/gkarthiks/vault-balancer)
+![License](https://img.shields.io/github/license/gkarthiks/vault-balancer.svg)
 
 ![](go-vault-balancer.png)
+
 
 *Vault Load Balancer(VLB)* is a simple load balancer written in GoLang to help get HA of the Open Source Vault.
 
