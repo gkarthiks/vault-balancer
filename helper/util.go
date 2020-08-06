@@ -17,7 +17,7 @@ const (
 )
 
 // GetVaultIPsFromLabelSelectors will extract the IP Addresses for the pods that matches the labelSelectors
-func GetVaultIPsFromLabelSelectors(labelSelector string, versionLogger *log.Entry)  map[string]struct{} {
+func GetVaultIPsFromLabelSelectors(labelSelector string, versionLogger *log.Entry) map[string]struct{} {
 	if len(labelSelector) > 0 {
 		labelSelector = strings.Join(strings.Split(labelSelector, ","), ",")
 		versionLogger.Infof("Discovering the Vault pods based on the label selector '%v'.", labelSelector)
@@ -50,7 +50,6 @@ func GetRetryFromContext(r *http.Request) int {
 	}
 	return 0
 }
-
 
 // extracts the pods IP from the selected pods
 func populateIpAddresses(podsList *v1.PodList) map[string]struct{} {

@@ -22,3 +22,8 @@ Using the seal-status API of Vault, determines the availability of the vault pod
 ## How to use VLB
 
 To make use of VLB, the vault pods must be already initialized and unsealed. DIY initialization and unsealing or you can also use the [Vault Initializer](https://github.com/gkarthiks/vault-initializer). After doing so, deploy the VLB to achieve the HA of the vault pods.
+
+
+## Roadmap:
+- Add vault-initializer as a go routine within VLB to reduce the resource cost.
+- Make VLB to use a shared location for holding the list of services and statuses 
