@@ -5,9 +5,9 @@ import (
 )
 
 var (
-	K8s           *discovery.K8s
-	Namespace     string
-	HttpTimeout   string
+	K8s         *discovery.K8s
+	Namespace   string
+	HttpTimeout string
 )
 
 const (

@@ -48,16 +48,16 @@ func init() {
 
 var (
 	versionLogger = log.WithFields(log.Fields{"vlb_version": BuildVersion})
-	BuildVersion = "dev"
-	balancerPort int
-	vaultPool    types.VaultPool
+	BuildVersion  = "dev"
+	balancerPort  int
+	vaultPool     types.VaultPool
 	labelSelector string
-	avail bool
+	avail         bool
 )
 
 const (
-	HealthCheckPath     = ":8200/v1/sys/seal-status"
-	ProxyPath           = ":8200"
+	HealthCheckPath = ":8200/v1/sys/seal-status"
+	ProxyPath       = ":8200"
 )
 
 func main() {
@@ -109,7 +109,7 @@ func loadBalance(w http.ResponseWriter, r *http.Request) {
 
 // setUpProxies will create the reverse proxies for the identified IPs
 func setUpProxies(serviceNameAndIP map[string]struct{}) {
-	for podIP, _ := range serviceNameAndIP {
+	for podIP := range serviceNameAndIP {
 		if !vaultPool.IsInThePool(podIP) {
 			sanitizedIP := strings.TrimSpace(podIP)
 			vaultUrl, err := url.Parse("http://" + sanitizedIP + ProxyPath)
@@ -155,7 +155,7 @@ func setUpProxies(serviceNameAndIP map[string]struct{}) {
 	var toBeRemoved []*types.VaultBackend
 	for _, b := range vaultPool.VaultBackends {
 		if _, ok := serviceNameAndIP[b.IP]; !ok {
-			toBeRemoved  = append(toBeRemoved, b)
+			toBeRemoved = append(toBeRemoved, b)
 		}
 	}
 	for _, b := range toBeRemoved {
@@ -163,7 +163,6 @@ func setUpProxies(serviceNameAndIP map[string]struct{}) {
 		vaultPool.RetireBackend(b)
 	}
 }
-
 
 // healthCheck runs a routine for check status of the pods every 2 mins
 func healthCheck(vaultPool types.VaultPool) {
